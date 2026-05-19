@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+const dotenv = require('dotenv');
+const authRoutes = require('./src/routes/auth.route');
 
 const driver = require('./src/config/neo4j');
 
@@ -8,6 +9,8 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+app.use('/api/auth', authRoutes);
 
 async function startServer() {
     try {
