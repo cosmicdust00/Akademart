@@ -151,6 +151,34 @@ const getProductStats = async (req, res) => {
     }
 };
 
+const getProductById = async (req, res) => {
+    const { id } = req.params;
+    const session = driver.session();
+    try {
+        const query = `
+            MATCH (p:Product {product_id: $id})
+            MATCH (u:User)-[:SELLING]->(p)
+            OPTIONAL MATCH (u)-[:STUDIES_IN_PRODI]->(pr:Prodi)
+            RETURN p {
+                .*,
+                seller_id: u.user_id,
+                seller_name: u.full_name,
+                seller_jurusan: pr.name,
+                seller_angkatan: u.angkatan
+            } AS product
+        `;
+        const result = await session.executeRead(tx => tx.run(query, { id }));
+        if (result.records.length === 0) return res.status(404).json({ error: "Produk tidak ada" });
+        
+        res.status(200).json(result.records[0].get('product'));
+    } catch (error) {
+        console.error("Error fetching the product:", error);
+        res.status(500).json({ error: "Gagal mengambil data produk." });
+    } finally {
+        await session.close();
+    }
+};
+
 module.exports = {
     createProduct,
     getAllProducts,

@@ -34,27 +34,40 @@ export default function ProductDetail() {
       setLoading(true);
       setErrorMsg("");
       try {
-        // 1. Fetch individual product
-        const res = await api.products.getById(id);
-        if (res.success && res.product) {
-          setProduct(res.product);
+        // Fetch individual product
+        // Pastikan endpoint ini di backend sudah mengembalikan objek produk
+        // lengkap dengan data penjual (seller_name, dll)
+        const productData = await api.products.getById(id);
+        
+        if (productData) {
+          // Fix harga Neo4j Integer jika ada
+          const formattedProduct = {
+            ...productData,
+            price: (productData.price && productData.price.low !== undefined) 
+                   ? productData.price.low 
+                   : productData.price
+          };
+          
+          setProduct(formattedProduct);
 
-          // 2. Fetch all products to compute related products in the same category
-          const allRes = await api.products.getAll();
-          if (allRes.success) {
-            const others = allRes.products.filter(
-              (p) => p.product_id !== id && p.category === res.product.category && p.status === "available"
+          // Fetch related products (menggunakan kategori yang sama)
+          const allProducts = await api.products.getAll();
+          if (Array.isArray(allProducts)) {
+            const others = allProducts.filter(
+              (p) => p.product_id !== id && 
+                     p.category === formattedProduct.category && 
+                     p.status === "available"
             );
             setRelatedProducts(others.slice(0, 3));
           }
 
-          // 3. Trigger IMPLICIT tracking event 'view'
-          await api.graph.trackInteraction(id, "view");
+          // Trigger tracking 'view' ke Neo4j
+          await api.interactions.view(id);
         } else {
           setErrorMsg("Barang tidak ditemukan di Akademart.");
         }
       } catch (err) {
-        setErrorMsg(err.message || "Terjadi kesalahan saat memuat barang.");
+        setErrorMsg("Terjadi kesalahan saat memuat barang.");
       } finally {
         setLoading(false);
       }

@@ -28,8 +28,7 @@ export default function ProductCard({ product, onAddToCart }) {
 
   const handleCardClick = async () => {
     try {
-      // Implicit profiling tracking: View action triggers graph edge update in background
-      await api.graph.trackInteraction(product_id, "view");
+      await api.interactions.view(product_id);
     } catch (err) {
       console.error("Gagal mengirim event view:", err.message);
     }
