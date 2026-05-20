@@ -5,8 +5,12 @@ const supabase = require('../config/supabase');
 // POST /api/products
 const createProduct = async (req, res) => {
     const userId = req.user.user_id; 
-    const { name, price, description, categoryNames } = req.body;
+    let { name, price, description, categoryNames, stock } = req.body;
     const file = req.file;
+
+    if (typeof categoryNames === 'string') {
+        categoryNames = JSON.parse(categoryNames);
+    }
 
     if (!file) {
         return res.status(400).json({ error: "Gambar produk wajib diunggah" });
@@ -61,6 +65,7 @@ const createProduct = async (req, res) => {
             productId,
             name,
             price: parseInt(price),
+            stock: parseInt(stock || 1),
             description,
             imageUrl,
             categoryNames
@@ -85,16 +90,23 @@ const createProduct = async (req, res) => {
 const getAllProducts = async (req, res) => {
     const session = driver.session();
     try {
-        // Ambil semua produk yang statusnya available, urutkan dari yang terbaru
-        const result = await session.executeRead(tx =>
-            tx.run(`
-                MATCH (p:Product {status: 'available'})
-                RETURN p
-                ORDER BY p.created_at DESC
-            `)
-        );
+        // Query ini akan menarik Produk, mencari siapa yang me-SELLING produk itu, dan mencari dia kuliah di PRODI apa.
+        const query = `
+            MATCH (u:User)-[:SELLING]->(p:Product {status: 'available'})
+            OPTIONAL MATCH (u)-[:STUDIES_IN_PRODI]->(pr:Prodi)
+            RETURN p {
+                .*, 
+                seller_id: u.user_id,
+                seller_name: u.full_name,
+                seller_jurusan: pr.name,
+                seller_angkatan: u.angkatan
+            } AS product
+            ORDER BY product.created_at DESC
+        `;
 
-        const products = result.records.map(record => record.get('p').properties);
+        const result = await session.executeRead(tx => tx.run(query));
+
+        const products = result.records.map(record => record.get('product'));
         res.status(200).json(products);
 
     } catch (error) {

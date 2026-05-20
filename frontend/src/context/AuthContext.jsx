@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from "react";
-import { api } from "../services/api";
+import api from "../services/api"; 
 
 const AuthContext = createContext(null);
 
@@ -8,7 +8,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Authenticate user on page refresh/mount
+  // Memuat User saat halaman direfresh
   useEffect(() => {
     const fetchUser = async () => {
       const token = localStorage.getItem("akademart_token");
@@ -18,16 +18,19 @@ export const AuthProvider = ({ children }) => {
       }
 
       try {
-        const res = await api.auth.getProfile();
-        if (res.success && res.user) {
-          setUser(res.user);
+        const res = await api.get('/auth/profile');
+        
+        if (res.data && res.data.user) {
+          setUser(res.data.user);
         } else {
-          // Token expired or invalid
           localStorage.removeItem("akademart_token");
         }
       } catch (err) {
         console.error("Gagal memuat profil pengguna otomatis:", err.message);
-        // Do not delete token on network errors so it survives offline mock restarts!
+        // Hapus token jika error 401 (Unauthorized/Token kadaluarsa)
+        if (err.response && err.response.status === 401) {
+             localStorage.removeItem("akademart_token");
+        }
       } finally {
         setLoading(false);
       }
@@ -36,35 +39,43 @@ export const AuthProvider = ({ children }) => {
     fetchUser();
   }, []);
 
+  // 2. Fungsi Login
   const login = async (email, password) => {
     setError(null);
     try {
-      const res = await api.auth.login({ email, password });
-      if (res.success) {
-        setUser(res.user);
-        return res.user;
-      } else {
-        throw new Error(res.message || "Gagal masuk. Coba lagi.");
-      }
+      // Panggil endpoint /api/auth/login
+      const res = await api.post('/auth/login', { email, password });
+      
+      // Ambil token dan user dari respon backend
+      const { token, user: userData } = res.data;
+      
+      // Simpan token ke LocalStorage
+      localStorage.setItem("akademart_token", token);
+      
+      // Update state user
+      setUser(userData);
+      return userData;
+
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || "Gagal masuk.";
+      const msg = err.response?.data?.error || err.message || "Gagal masuk.";
       setError(msg);
       throw new Error(msg);
     }
   };
 
+  // Fungsi Register
   const register = async (userData) => {
     setError(null);
     try {
-      const res = await api.auth.register(userData);
-      if (res.success) {
-        setUser(res.user);
-        return res.user;
-      } else {
-        throw new Error(res.message || "Gagal mendaftar.");
-      }
+      // Backend kita mengembalikan { message: "User registered..." }
+      const res = await api.post('/auth/register', userData);
+      
+      // Backend kita saat register TIDAK mengirimkan token/user data otomatis login
+      // Jadi kita biarkan user state tetap null, user harus login manual setelah sukses register
+      return res.data;
+
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || "Gagal mendaftar.";
+      const msg = err.response?.data?.error || err.message || "Gagal mendaftar.";
       setError(msg);
       throw new Error(msg);
     }
@@ -73,28 +84,27 @@ export const AuthProvider = ({ children }) => {
   const updateProfile = async (profileData) => {
     setError(null);
     try {
-      const res = await api.auth.updateProfile(profileData);
-      if (res.success) {
-        setUser(res.user);
-        return res.user;
-      } else {
-        throw new Error(res.message || "Gagal memperbarui profil.");
+      const res = await api.patch('/users/profile/update', profileData);
+      
+      // Update state user di frontend agar langsung sinkron dengan data baru
+      if (user) {
+         setUser({ ...user, ...profileData });
       }
+      
+      return res.data;
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || "Gagal memperbarui profil.";
+      const msg = err.response?.data?.error || err.message || "Gagal memperbarui profil.";
       setError(msg);
       throw new Error(msg);
     }
   };
 
-  const logout = async () => {
-    try {
-      await api.auth.logout();
-    } catch (err) {
-      console.error("Logout error:", err);
-    } finally {
-      setUser(null);
-    }
+  // Fungsi Logout
+  const logout = () => {
+    // Kita tidak punya endpoint logout di backend karena kita pakai JWT (Stateless)
+    // Jadi cukup hapus token dari frontend
+    localStorage.removeItem("akademart_token");
+    setUser(null);
   };
 
   return (

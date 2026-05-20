@@ -158,8 +158,103 @@ const syncImplicitInterests = async (req, res) => {
     }
 };
 
+const updateProfile = async (req, res) => {
+    const userId = req.user.user_id;
+    // Semua data ini bersifat opsional, user boleh mengirim hanya satu atau semuanya
+    const { full_name, fakultas, prodi, organisasi, matakuliah } = req.body;
+
+    const session = driver.session();
+    
+    // Kita gunakan Transaction manual (beginTransaction) agar bisa menjalankan beberapa query Cypher secara terpisah namun dalam satu kesatuan proses.
+    const tx = session.beginTransaction(); 
+
+    try {
+        // Update Properti Teks Biasa (Contoh: full_name)
+        if (full_name) {
+            await tx.run(
+                `MATCH (u:User {user_id: $userId}) SET u.full_name = $full_name`,
+                { userId, full_name }
+            );
+        }
+
+        // Update Fakultas
+        if (fakultas) {
+            await tx.run(`
+                MATCH (u:User {user_id: $userId})
+                // Hapus relasi fakultas yang lama jika sebelumnya sudah ada
+                OPTIONAL MATCH (u)-[r:STUDIES_IN_FAKULTAS]->(:Fakultas)
+                DELETE r
+                
+                // Buat node Fakultas baru (jika belum ada) dan hubungkan
+                WITH u
+                MERGE (f:Fakultas {name: $fakultas})
+                MERGE (u)-[:STUDIES_IN_FAKULTAS]->(f)
+            `, { userId, fakultas });
+        }
+
+        // Update Prodi
+        if (prodi) {
+            await tx.run(`
+                MATCH (u:User {user_id: $userId})
+                OPTIONAL MATCH (u)-[r:STUDIES_IN_PRODI]->(:Prodi)
+                DELETE r
+                
+                WITH u
+                MERGE (p:Prodi {name: $prodi})
+                MERGE (u)-[:STUDIES_IN_PRODI]->(p)
+            `, { userId, prodi });
+        }
+
+        // Update Matakuliah
+        if (matakuliah && Array.isArray(matakuliah)) {
+            await tx.run(`
+                MATCH (u:User {user_id: $userId})
+                // Hapus mata kuliah semester lalu (reset)
+                OPTIONAL MATCH (u)-[r:TAKES_COURSE]->(:MataKuliah)
+                DELETE r
+                
+                // Loop array matakuliah, buat node-nya, dan hubungkan
+                WITH u
+                UNWIND $matakuliah AS mkName
+                MERGE (m:MataKuliah {name: mkName})
+                MERGE (u)-[:TAKES_COURSE]->(m)
+            `, { userId, matakuliah });
+        }
+
+        // Update Organisasi
+        // { "organisasi": ["BEM", "HIMA", "UKM Musik"] }
+        if (organisasi && Array.isArray(organisasi)) {
+            await tx.run(`
+                MATCH (u:User {user_id: $userId})
+                // Hapus semua keanggotaan organisasi lama (reset)
+                OPTIONAL MATCH (u)-[r:MEMBER_OF]->(:Organisasi)
+                DELETE r
+                
+                // Loop array organisasi, buat node-nya, dan hubungkan
+                WITH u
+                UNWIND $organisasi AS orgName
+                MERGE (o:Organisasi {name: orgName})
+                MERGE (u)-[:MEMBER_OF]->(o)
+            `, { userId, organisasi });
+        }
+
+        // Jika semua query di atas berhasil tanpa error, simpan permanen ke database
+        await tx.commit();
+        
+        res.status(200).json({ message: "Profil berhasil diperbarui!" });
+    } catch (error) {
+        // Jika ada error di tengah jalan, batalkan SEMUA perubahan (rollback)
+        await tx.rollback();
+        console.error("Error updating profile:", error);
+        res.status(500).json({ error: "Gagal memperbarui profil." });
+    } finally {
+        await session.close();
+    }
+};
+
 module.exports = { 
     updateUserPersona,
     setExplicitInterests,
-    syncImplicitInterests
+    syncImplicitInterests,
+    updateProfile
 };

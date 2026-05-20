@@ -8,5 +8,6 @@ router.post('/update-persona/:userId', authMiddleware, userProfileController.upd
 
 router.post('/interests/explicit', authMiddleware, userProfileController.setExplicitInterests);
 router.post('/interests/sync', authMiddleware, userProfileController.syncImplicitInterests);
+router.patch('/update', authMiddleware, userProfileController.updateProfile);
 
 module.exports = router;

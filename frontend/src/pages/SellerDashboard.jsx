@@ -3,20 +3,8 @@ import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
 import Navbar from "../components/Navbar";
 import { 
-  Store, 
-  Plus, 
-  Trash2, 
-  Check, 
-  ToggleLeft, 
-  ToggleRight, 
-  DollarSign, 
-  Layers, 
-  CheckCircle,
-  Eye,
-  X,
-  Upload,
-  Sparkles,
-  Loader
+  Store, Plus, Trash2, Check, ToggleLeft, ToggleRight, DollarSign, 
+  Layers, CheckCircle, Eye, X, Upload, Sparkles, Loader
 } from "lucide-react";
 
 export default function SellerDashboard() {
@@ -25,7 +13,6 @@ export default function SellerDashboard() {
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState("");
 
-  // Metrics
   const [metrics, setMetrics] = useState({
     totalEarnings: 0,
     activeCount: 0,
@@ -33,7 +20,6 @@ export default function SellerDashboard() {
     totalViews: 0
   });
 
-  // Create Product Modal State
   const [modalOpen, setModalOpen] = useState(false);
   const [newProdName, setNewProdName] = useState("");
   const [newProdPrice, setNewProdPrice] = useState("");
@@ -48,18 +34,24 @@ export default function SellerDashboard() {
   const loadSellerData = async () => {
     setLoading(true);
     try {
-      const res = await api.products.getAll();
-      if (res.success) {
-        // Filter products belonging to this seller
-        const mine = res.products.filter(p => p.seller_id === user?.user_id);
-        setMyProducts(mine);
+      // Menggunakan endpoint khusus seller agar produk yang laku juga tertarik
+      const productsData = await api.seller.getProducts();
+      
+      if (Array.isArray(productsData)) {
+        // Parser Harga dari Neo4j Integer (MencegahNaN)
+        const parsedProducts = productsData.map(p => ({
+            ...p,
+            price: (p.price && p.price.low !== undefined) ? p.price.low : p.price
+        }));
 
-        // Compute metrics
+        setMyProducts(parsedProducts);
+
+        // Kalkulasi Metrik
         let earnings = 0;
         let active = 0;
         let sold = 0;
         
-        mine.forEach(p => {
+        parsedProducts.forEach(p => {
           const isAvail = p.status === "available" || p.status === "Tersedia";
           if (isAvail) active += 1;
           else {
@@ -68,8 +60,8 @@ export default function SellerDashboard() {
           }
         });
 
-        // Compute total views (simulated view interactions on seller's products)
-        const mockViews = mine.length * 12 + 5; // dynamic metric padding
+        // Simulasi view (nanti bisa disambungkan dengan properti Neo4j view count)
+        const mockViews = parsedProducts.length * 12 + 5; 
 
         setMetrics({
           totalEarnings: earnings,
@@ -91,7 +83,6 @@ export default function SellerDashboard() {
     }
   }, [user]);
 
-  // Handle file picker
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -100,38 +91,36 @@ export default function SellerDashboard() {
     }
   };
 
-  // Toggle available / sold_out status
   const handleToggleStatus = async (product) => {
     const isAvail = product.status === "available" || product.status === "Tersedia";
-    const nextStatus = isAvail ? "sold_out" : "available";
+    // Jika sedang available, kita set stok jadi 0 (sold_out). Jika terjual, set stok 1 (available)
+    const targetStock = isAvail ? 0 : 1; 
+    
     try {
-      const res = await api.products.updateStatus(product.product_id, nextStatus);
-      if (res.success) {
-        setToastMessage(`Status barang "${product.name}" berhasil diubah!`);
-        setTimeout(() => setToastMessage(""), 3500);
-        loadSellerData();
-      }
+      await api.seller.updateStock(product.product_id, targetStock, 'set');
+      setToastMessage(`Status barang "${product.name}" berhasil diubah!`);
+      setTimeout(() => setToastMessage(""), 3500);
+      loadSellerData(); // Refresh data
     } catch (err) {
       console.error(err);
+      alert("Gagal merubah status produk");
     }
   };
 
-  // Delete product listing
   const handleDeleteProduct = async (id) => {
     if (!window.confirm("Apakah Anda yakin ingin menghapus barang jualan ini dari Akademart?")) return;
     try {
-      const res = await api.products.delete(id);
-      if (res.success) {
-        setToastMessage("Barang berhasil dihapus.");
-        setTimeout(() => setToastMessage(""), 3500);
-        loadSellerData();
-      }
+      // Menggunakan API delete khusus seller
+      await api.seller.deleteProduct(id);
+      setToastMessage("Barang berhasil dihapus.");
+      setTimeout(() => setToastMessage(""), 3500);
+      loadSellerData();
     } catch (err) {
       console.error(err);
+      alert("Gagal menghapus produk");
     }
   };
 
-  // Submit product creation form
   const handleAddProductSubmit = async (e) => {
     e.preventDefault();
     if (!newProdName || !newProdPrice || !newProdDesc || !selectedFile) {
@@ -144,28 +133,27 @@ export default function SellerDashboard() {
       const fd = new FormData();
       fd.append("name", newProdName);
       fd.append("price", newProdPrice);
+      fd.append("stock", 1); // Default saat upload barang adalah 1
       fd.append("description", newProdDesc);
-      fd.append("category", newProdCategory);
+      // Di backend, kategori ditangkap sebagai array: categoryNames
+      fd.append("categoryNames", JSON.stringify([newProdCategory])); 
       fd.append("image", selectedFile);
 
-      const res = await api.products.create(fd);
-      if (res.success) {
-        setToastMessage("Barang jualan berhasil dipasang!");
-        setTimeout(() => setToastMessage(""), 3500);
-        
-        // Reset form
-        setNewProdName("");
-        setNewProdPrice("");
-        setNewProdDesc("");
-        setSelectedFile(null);
-        setFilePreview("");
-        setModalOpen(false);
+      await api.products.create(fd);
+      
+      setToastMessage("Barang jualan berhasil dipasang!");
+      setTimeout(() => setToastMessage(""), 3500);
+      
+      setNewProdName("");
+      setNewProdPrice("");
+      setNewProdDesc("");
+      setSelectedFile(null);
+      setFilePreview("");
+      setModalOpen(false);
 
-        // Reload dashboard
-        loadSellerData();
-      }
+      loadSellerData();
     } catch (err) {
-      alert("Gagal menambahkan barang: " + err.message);
+      alert("Gagal menambahkan barang. Pastikan ukuran file gambar tidak terlalu besar.");
     } finally {
       setIsSubmitting(false);
     }

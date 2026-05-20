@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import apiClient from "../services/api";
 import { 
   Sparkles, 
   Lock, 
@@ -18,7 +19,7 @@ import {
 } from "lucide-react";
 
 export default function Login() {
-  const { login, register } = useAuth();
+  const { login, register, updateProfile } = useAuth();
   const navigate = useNavigate();
 
   // Screen toggle: 'login' | 'register'
@@ -109,26 +110,45 @@ export default function Login() {
     }
   };
 
+  // INTEGRASI BACKEND: Sequential API Calls
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     setUiError("");
     setIsLoading(true);
 
-    const fullPayload = {
-      ...regAccount,
-      fakultas: regFakultas,
-      jurusan: regJurusan,
-      matakuliah: regCourses,
-      interests: selectedInterests,
-      hobbies: selectedHobbies,
-    };
-
     try {
-      await register(fullPayload);
+      // Daftarkan identitas dasar
+      await register({
+        username: regAccount.username,
+        full_name: regAccount.full_name,
+        email: regAccount.email,
+        password: regAccount.password,
+        angkatan: parseInt(regAccount.angkatan, 10),
+      });
+
+      // Login otomatis
+      await login(regAccount.email, regAccount.password);
+
+      // Update Profil Akademik (Fakultas, Prodi, DAN Mata Kuliah)
+      await updateProfile({
+        fakultas: regFakultas,
+        prodi: regJurusan,
+        matakuliah: regCourses // Tambahkan ini di sini
+      });
+
+      // Update Minat & Hobi Eksplisit (Hanya interest dan hobby)
+      const combinedInterests = [...selectedInterests, ...selectedHobbies];
+      if (combinedInterests.length > 0) {
+        await apiClient.post("/users/profile/interests/explicit", {
+          interests: combinedInterests
+        });
+      }
+
+      // Sukses! Arahkan ke Beranda
       navigate("/home");
     } catch (err) {
-      setUiError(err.message);
-      setRegStep(1); // send back to start to review credentials if signup failed
+      setUiError(err.message || "Gagal menyelesaikan pendaftaran.");
+      setRegStep(1);
     } finally {
       setIsLoading(false);
     }
@@ -193,7 +213,7 @@ export default function Login() {
         )}
 
         {/* MAIN PANEL */}
-        <div className="glass-panel rounded-3xl shadow-2xl p-8 border border-white/10 glow-border">
+        <div className="glass-panel rounded-3xl shadow-2xl p-8 border border-white/10 glow-border bg-slate-900/60 backdrop-blur-xl">
           {/* LOGIN CONTAINER */}
           {authMode === "login" && (
             <form onSubmit={handleLoginSubmit} className="space-y-6">
@@ -210,7 +230,7 @@ export default function Login() {
                     placeholder="Username atau Email Kampus"
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
-                    className="w-full pl-11 pr-4 py-3 bg-slate-900/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-sm"
+                    className="w-full pl-11 pr-4 py-3 bg-slate-950/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-sm"
                   />
                 </div>
 
@@ -221,7 +241,7 @@ export default function Login() {
                     placeholder="Kata Sandi"
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
-                    className="w-full pl-11 pr-4 py-3 bg-slate-900/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-sm"
+                    className="w-full pl-11 pr-4 py-3 bg-slate-950/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-sm"
                   />
                 </div>
               </div>
@@ -293,7 +313,7 @@ export default function Login() {
                       placeholder="Username (contoh: budi.informatika)"
                       value={regAccount.username}
                       onChange={(e) => setRegAccount({ ...regAccount, username: e.target.value.toLowerCase().replace(/\s/g, "") })}
-                      className="w-full pl-11 pr-4 py-3 bg-slate-900/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm"
+                      className="w-full pl-11 pr-4 py-3 bg-slate-950/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm"
                     />
                   </div>
 
@@ -304,7 +324,7 @@ export default function Login() {
                       placeholder="Nama Lengkap"
                       value={regAccount.full_name}
                       onChange={(e) => setRegAccount({ ...regAccount, full_name: e.target.value })}
-                      className="w-full pl-11 pr-4 py-3 bg-slate-900/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm"
+                      className="w-full pl-11 pr-4 py-3 bg-slate-950/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm"
                     />
                   </div>
 
@@ -312,10 +332,10 @@ export default function Login() {
                     <Mail className="absolute left-3.5 top-3.5 w-5 h-5 text-slate-500" />
                     <input
                       type="email"
-                      placeholder="Email Kampus (@kampus.ac.id)"
+                      placeholder="Email kampus (@kampus.ac.id)"
                       value={regAccount.email}
                       onChange={(e) => setRegAccount({ ...regAccount, email: e.target.value })}
-                      className="w-full pl-11 pr-4 py-3 bg-slate-900/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm"
+                      className="w-full pl-11 pr-4 py-3 bg-slate-950/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm"
                     />
                   </div>
 
@@ -327,7 +347,7 @@ export default function Login() {
                         placeholder="Kata Sandi"
                         value={regAccount.password}
                         onChange={(e) => setRegAccount({ ...regAccount, password: e.target.value })}
-                        className="w-full pl-11 pr-4 py-3 bg-slate-900/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm"
+                        className="w-full pl-11 pr-4 py-3 bg-slate-950/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm"
                       />
                     </div>
 
@@ -336,8 +356,9 @@ export default function Login() {
                       <select
                         value={regAccount.angkatan}
                         onChange={(e) => setRegAccount({ ...regAccount, angkatan: e.target.value })}
-                        className="w-full pl-11 pr-4 py-3 bg-slate-900/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm appearance-none cursor-pointer"
+                        className="w-full pl-11 pr-4 py-3 bg-slate-950/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm appearance-none cursor-pointer"
                       >
+                        <option value="2024">Angkatan 2025</option>
                         <option value="2024">Angkatan 2024</option>
                         <option value="2023">Angkatan 2023</option>
                         <option value="2022">Angkatan 2022</option>
@@ -365,7 +386,7 @@ export default function Login() {
                           setRegFakultas(e.target.value);
                           setRegJurusan("");
                         }}
-                        className="w-full px-4 py-3 bg-slate-900/50 border border-white/10 rounded-xl text-slate-100 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm appearance-none cursor-pointer"
+                        className="w-full px-4 py-3 bg-slate-950/50 border border-white/10 rounded-xl text-slate-100 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm appearance-none cursor-pointer"
                       >
                         <option value="">-- Pilih Fakultas --</option>
                         {Object.keys(fakultasData).map((fak) => (
@@ -380,7 +401,7 @@ export default function Login() {
                         value={regJurusan}
                         onChange={(e) => setRegJurusan(e.target.value)}
                         disabled={!regFakultas}
-                        className="w-full px-4 py-3 bg-slate-900/50 border border-white/10 rounded-xl text-slate-100 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm appearance-none disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                        className="w-full px-4 py-3 bg-slate-950/50 border border-white/10 rounded-xl text-slate-100 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm appearance-none disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                       >
                         <option value="">-- Pilih Jurusan --</option>
                         {regFakultas &&
@@ -399,7 +420,7 @@ export default function Login() {
                   <div className="space-y-1">
                     <h3 className="text-sm font-semibold text-violet-400 uppercase tracking-wider">Mata Kuliah Semester Ini</h3>
                     <p className="text-[11px] text-slate-400">
-                      Mesin rekomendasi graph kami akan memetakan barang-barang relevan yang dibeli oleh mahasiswa lain di mata kuliah yang sama!
+                      Mesin rekomendasi graph kami akan memetakan barang-barang relevan yang dibeli oleh mahasiswa lain di mata kuliah yang sama
                     </p>
                   </div>
 
@@ -413,7 +434,7 @@ export default function Login() {
                           value={courseInput}
                           onChange={(e) => setCourseInput(e.target.value)}
                           onKeyDown={(e) => e.key === "Enter" && handleAddCourse(e)}
-                          className="w-full pl-11 pr-4 py-3 bg-slate-900/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm"
+                          className="w-full pl-11 pr-4 py-3 bg-slate-950/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm"
                         />
                       </div>
                       <button

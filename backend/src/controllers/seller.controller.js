@@ -96,4 +96,47 @@ const cancelSale = async (req, res) => {
     }
 };
 
-module.exports = { confirmSale, updateStock, cancelSale };
+// GET /api/seller/products
+const getMyProducts = async (req, res) => {
+    const userId = req.user.user_id;
+    const session = driver.session();
+    try {
+        const query = `
+            MATCH (u:User {user_id: $userId})-[:SELLING]->(p:Product)
+            RETURN p
+            ORDER BY p.created_at DESC
+        `;
+        const result = await session.executeRead(tx => tx.run(query, { userId }));
+        const products = result.records.map(record => record.get('p').properties);
+        
+        res.status(200).json(products);
+    } catch (error) {
+        console.error("Error fetching seller products:", error);
+        res.status(500).json({ error: "Gagal mengambil data toko Anda." });
+    } finally {
+        await session.close();
+    }
+};
+
+// DELETE /api/seller/products/:productId
+const deleteProduct = async (req, res) => {
+    const userId = req.user.user_id;
+    const { productId } = req.params;
+    const session = driver.session();
+
+    try {
+        // DETACH DELETE akan menghapus node Product beserta semua relasinya (SELLING, LIKED, dll)
+        const query = `
+            MATCH (u:User {user_id: $userId})-[:SELLING]->(p:Product {product_id: $productId})
+            DETACH DELETE p
+        `;
+        await session.executeWrite(tx => tx.run(query, { userId, productId }));
+        res.status(200).json({ message: "Produk berhasil dihapus." });
+    } catch (error) {
+        res.status(500).json({ error: "Gagal menghapus produk." });
+    } finally {
+        await session.close();
+    }
+};
+
+module.exports = { confirmSale, updateStock, cancelSale, getMyProducts, deleteProduct };

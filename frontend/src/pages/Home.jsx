@@ -17,40 +17,48 @@ import {
 
 export default function Home() {
   const { user } = useAuth();
-  const [recommendations, setRecommendations] = useState(null);
+  const [recommendations, setRecommendations] = useState([]);
   const [recentProducts, setRecentProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState("");
 
   // Statistics counters
   const [stats, setStats] = useState({
-    activeListings: 120,
-    sameDeptSellers: 14,
-    successfulCODs: 87,
+    activeListings: 0,
+    sameDeptSellers: 0,
+    successfulCODs: 87, // Bisa disimulasikan atau ambil dari endpoint terpisah nanti
   });
 
   useEffect(() => {
+    // Fungsi bantuan untuk mengubah Neo4j Integer {low: 95000, high: 0} menjadi 95000
+    const parseNeo4jPrice = (productsArray) => {
+      return productsArray.map(p => ({
+        ...p,
+        // Jika price berbentuk objek Neo4j, ambil .low-nya. Jika angka biasa, biarkan.
+        price: (p.price && p.price.low !== undefined) ? p.price.low : p.price
+      }));
+    };
+
     const loadHomeData = async () => {
       setLoading(true);
       try {
-        // 1. Fetch graph-based personalized recommendations
-        const recRes = await api.graph.getRecommendations();
-        if (recRes.success) {
-          setRecommendations(recRes.recommendations);
+        const recomData = await api.recom.get();
+        if (Array.isArray(recomData)) {
+          // Gunakan fungsi helper
+          setRecommendations(parseNeo4jPrice(recomData));
         }
 
-        // 2. Fetch all products to display "Barang Baru"
-        const prodRes = await api.products.getAll();
-        if (prodRes.success) {
-          const available = prodRes.products.filter(p => p.status === "available" || p.status === "Tersedia");
-          // Grab latest 4 available products
-          setRecentProducts(available.slice(0, 4));
+        const productsData = await api.products.getAll();
+        if (Array.isArray(productsData)) {
+          const available = productsData.filter(p => p.status === "available");
+          
+          // Gunakan fungsi helper
+          setRecentProducts(parseNeo4jPrice(available).slice(0, 4));
 
-          // Set dynamic stats based on local data if mock is running
-          const ownDeptListingsCount = prodRes.products.filter(p => p.seller_jurusan === user?.jurusan).length;
+          const ownDeptListingsCount = productsData.filter(p => p.seller_jurusan === user?.prodi).length;
           setStats({
-            activeListings: prodRes.products.length + 80, // padd for visual premium
-            sameDeptSellers: ownDeptListingsCount + 2,
+            activeListings: available.length,
+            sameDeptSellers: ownDeptListingsCount,
             successfulCODs: 135,
           });
         }
@@ -67,7 +75,7 @@ export default function Home() {
   }, [user]);
 
   // Unified Add to Cart Handler
-  const handleAddToCart = (product) => {
+  const handleAddToCart = async (product) => {
     try {
       const cartKey = `akademart_cart_${user?.user_id}`;
       const stored = localStorage.getItem(cartKey);
@@ -82,8 +90,8 @@ export default function Home() {
 
       localStorage.setItem(cartKey, JSON.stringify(cartItems));
 
-      // Trigger implicit purchase tracking edge
-      api.graph.trackInteraction(product.product_id, "cart");
+      // Trigger implicit graph tracking edge
+      await api.interactions.view(product.product_id);
 
       // Dispatch custom event to navbar
       window.dispatchEvent(new Event("cartUpdated"));
@@ -119,8 +127,7 @@ export default function Home() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 space-y-12">
         {/* Personalized Welcome Banner */}
-        <section className="glass-panel rounded-3xl p-8 relative overflow-hidden glow-border">
-          {/* Neon blob */}
+        <section className="glass-panel rounded-3xl p-8 relative overflow-hidden glow-border bg-slate-900/60 backdrop-blur-xl">
           <div className="absolute right-0 top-0 w-80 h-80 rounded-full bg-violet-600/10 blur-3xl pointer-events-none"></div>
           
           <div className="max-w-3xl space-y-4">
@@ -130,14 +137,14 @@ export default function Home() {
             </span>
 
             <h2 className="text-3xl md:text-4xl font-extrabold text-white tracking-tight leading-tight">
-              Hai, {user?.full_name}! 👋 <br />
+              Hallo, {user?.full_name}! <br />
               <span className="bg-gradient-to-r from-violet-400 via-indigo-300 to-cyan-400 bg-clip-text text-transparent">
-                Temukan Kebutuhan Kuliahmu Di Sini
+                Temukan Kebutuhan Kuliah Anda
               </span>
             </h2>
             
             <p className="text-slate-400 text-sm md:text-base leading-relaxed">
-              Jual beli barang pre-loved antar sesama mahasiswa di **{user?.fakultas}**. 
+              Jual beli barang antar sesama mahasiswa di <strong>{user?.fakultas}</strong>. 
               Sistem COD instan tanpa ongkir, aman, cepat, dan terpercaya.
             </p>
 
@@ -162,7 +169,7 @@ export default function Home() {
 
         {/* Hyper-Local Statistics Counters */}
         <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-          <div className="glass-panel rounded-2xl p-6 flex items-center space-x-4">
+          <div className="glass-panel bg-slate-900/50 rounded-2xl p-6 flex items-center space-x-4 border border-white/5">
             <div className="w-12 h-12 rounded-xl bg-violet-600/10 flex items-center justify-center text-violet-400 border border-violet-500/10">
               <Layers className="w-6 h-6" />
             </div>
@@ -172,98 +179,44 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="glass-panel rounded-2xl p-6 flex items-center space-x-4">
+          <div className="glass-panel bg-slate-900/50 rounded-2xl p-6 flex items-center space-x-4 border border-white/5">
             <div className="w-12 h-12 rounded-xl bg-cyan-600/10 flex items-center justify-center text-cyan-400 border border-cyan-500/10">
               <MapPin className="w-6 h-6" />
             </div>
             <div>
               <div className="text-2xl font-black text-white">{stats.sameDeptSellers} Seller</div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Aktif di Jurusanmu</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Aktif di Prodi Kamu</div>
             </div>
           </div>
 
-          <div className="glass-panel rounded-2xl p-6 flex items-center space-x-4">
+          <div className="glass-panel bg-slate-900/50 rounded-2xl p-6 flex items-center space-x-4 border border-white/5">
             <div className="w-12 h-12 rounded-xl bg-emerald-600/10 flex items-center justify-center text-emerald-400 border border-emerald-500/10">
               <DollarSign className="w-6 h-6" />
             </div>
             <div>
-              <div className="text-2xl font-black text-white">{stats.successfulCODs} Transaksi</div>
+              <div className="text-2xl font-black text-white">{stats.successfulCODs}+ Transaksi</div>
               <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">COD Kampus Sukses</div>
             </div>
           </div>
         </section>
 
-        {/* RECOMMENDATION ROW 1: DEPARTMENT-BASED COLLABORATIVE FILTERING */}
-        {recommendations?.department?.length > 0 && (
+        {/* NEO4J RECOMMENDATION ENGINE ROW */}
+        {recommendations.length > 0 && (
           <section className="space-y-6">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <span className="text-[10px] uppercase tracking-widest text-cyan-400 font-bold flex items-center space-x-1">
                   <TrendingUp className="w-3.5 h-3.5" />
-                  <span>Collaborative Filtering</span>
+                  <span>Graph Rekomendasi</span>
                 </span>
                 <h3 className="text-xl font-bold text-slate-100">
-                  Mahasiswa di <span className="text-cyan-400 font-extrabold">{user?.jurusan}</span> Juga Melirik...
+                  Disesuaikan Khusus Untuk <span className="text-cyan-400 font-extrabold">{user?.full_name}</span>
                 </h3>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {recommendations.department.slice(0, 4).map((product) => (
-                <ProductCard
-                  key={product.product_id}
-                  product={product}
-                  onAddToCart={handleAddToCart}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* RECOMMENDATION ROW 2: COURSE-BASED (ACADEMIC CONTEXT) */}
-        {recommendations?.courses?.length > 0 && (
-          <section className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <span className="text-[10px] uppercase tracking-widest text-violet-400 font-bold flex items-center space-x-1">
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span>Kontekstual Akademik</span>
-                </span>
-                <h3 className="text-xl font-bold text-slate-100">
-                  Populer Untuk Kelas <span className="text-violet-400 font-extrabold">{user?.matakuliah[0] || "Semester Ini"}</span>...
-                </h3>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {recommendations.courses.slice(0, 4).map((product) => (
-                <ProductCard
-                  key={product.product_id}
-                  product={product}
-                  onAddToCart={handleAddToCart}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* RECOMMENDATION ROW 3: INTERESTS & HOBBIES GRAPH MATCHING */}
-        {recommendations?.interests?.length > 0 && (
-          <section className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <span className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold flex items-center space-x-1">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Graph Profiling</span>
-                </span>
-                <h3 className="text-xl font-bold text-slate-100">
-                  Berdasarkan Hobi & Minat Sejenis...
-                </h3>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {recommendations.interests.slice(0, 4).map((product) => (
+              {recommendations.slice(0, 4).map((product) => (
                 <ProductCard
                   key={product.product_id}
                   product={product}
@@ -279,8 +232,8 @@ export default function Home() {
           <section className="space-y-6 pt-4 border-t border-white/5">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <h3 className="text-xl font-bold text-slate-100">Barang Baru di Kampusmu</h3>
-                <p className="text-xs text-slate-500">Daftar barang pre-loved segar yang diposting oleh teman-teman sekampus.</p>
+                <h3 className="text-xl font-bold text-slate-100">Barang Baru di Kampus</h3>
+                <p className="text-xs text-slate-500">Daftar barang fresh yang diposting oleh sesama mahasiswa kampus.</p>
               </div>
               <Link
                 to="/browse"
