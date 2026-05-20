@@ -23,7 +23,8 @@ const confirmSale = async (req, res) => {
 
 // PATCH /api/seller/products/:productId/stock
 const updateStock = async (req, res) => {
-    const { productId, amount, operation } = req.body; 
+    const { productId } = req.params;
+    const { amount, operation } = req.body;
     // operation bisa: 'add', 'subtract', atau 'set'
     const session = driver.session();
 

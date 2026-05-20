@@ -6,6 +6,7 @@ const productRoutes = require('./src/routes/product.route');
 const interactionRoutes = require('./src/routes/interaction.route');
 const sellerRoutes = require('./src/routes/seller.route');
 const userProfileRoutes = require('./src/routes/userProfile.route');
+const recomRoutes = require('./src/routes/recom.route');
 
 const driver = require('./src/config/neo4j');
 
@@ -28,6 +29,9 @@ app.use('/api/seller', sellerRoutes);
 
 // User Profile
 app.use('/api/users/profile', userProfileRoutes);
+
+// Recommendation
+app.use('/api/recom', recomRoutes);
 
 async function startServer() {
     try {
