@@ -1,6 +1,12 @@
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+const dotenv = require('dotenv');
+const authRoutes = require('./src/routes/auth.route');
+const productRoutes = require('./src/routes/product.route');
+const interactionRoutes = require('./src/routes/interaction.route');
+const sellerRoutes = require('./src/routes/seller.route');
+const userProfileRoutes = require('./src/routes/userProfile.route');
+const recomRoutes = require('./src/routes/recom.route');
 
 const driver = require('./src/config/neo4j');
 
@@ -8,6 +14,24 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+// Auth
+app.use('/api/auth', authRoutes);
+
+// Products
+app.use('/api/products', productRoutes);
+
+// Interaction
+app.use('/api/interactions', interactionRoutes);
+
+// Seller
+app.use('/api/seller', sellerRoutes);
+
+// User Profile
+app.use('/api/users/profile', userProfileRoutes);
+
+// Recommendation
+app.use('/api/recom', recomRoutes);
 
 async function startServer() {
     try {
