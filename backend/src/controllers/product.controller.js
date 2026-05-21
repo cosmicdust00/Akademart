@@ -94,12 +94,15 @@ const getAllProducts = async (req, res) => {
         const query = `
             MATCH (u:User)-[:SELLING]->(p:Product {status: 'available'})
             OPTIONAL MATCH (u)-[:STUDIES_IN_PRODI]->(pr:Prodi)
+            OPTIONAL MATCH (p)-[:BELONGS_TO]->(c:Category) // <--- TARIK KATEGORI
+            WITH p, u, pr, collect(c.name) AS categories
             RETURN p {
                 .*, 
                 seller_id: u.user_id,
                 seller_name: u.full_name,
                 seller_jurusan: pr.name,
-                seller_angkatan: u.angkatan
+                seller_angkatan: u.angkatan,
+                category: CASE WHEN size(categories) > 0 THEN categories[0] ELSE 'Lainnya' END
             } AS product
             ORDER BY product.created_at DESC
         `;
@@ -182,5 +185,6 @@ const getProductById = async (req, res) => {
 module.exports = {
     createProduct,
     getAllProducts,
-    getProductStats
+    getProductStats,
+    getProductById
 };

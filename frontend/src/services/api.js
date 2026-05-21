@@ -1,6 +1,5 @@
 import axios from "axios";
 
-// Target VITE_API_URL dari .env, atau gunakan localhost backend
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const apiClient = axios.create({
@@ -35,7 +34,7 @@ export const api = {
       const response = await apiClient.post("/auth/login", credentials);
       return response.data;
     },
-    
+
     register: async (userData) => {
       // POST /api/auth/register
       const response = await apiClient.post("/auth/register", userData);
@@ -68,6 +67,11 @@ export const api = {
       const response = await apiClient.get(`/products/${productId}/stats`);
       return response.data;
     },
+      // GET /api/products/:productId
+    getById: async (id) => {
+      const response = await apiClient.get(`/products/${id}`);
+      return response.data;
+    },
 
     create: async (formData) => {
       // POST /api/products
@@ -88,7 +92,7 @@ export const api = {
       const response = await apiClient.post("/interactions/view", { productId });
       return response.data;
     },
-    
+
     buy: async (productId) => {
       // POST /api/interactions/buy
       const response = await apiClient.post("/interactions/buy", { productId });
@@ -133,10 +137,9 @@ export const api = {
       });
       return response.data;
     },
-    
-    confirmSale: async (productId, buyerId) => {
-      // POST /api/seller/orders/confirm
-      const response = await apiClient.post("/seller/orders/confirm", { productId, buyerId });
+
+    confirmSale: async (productId) => {
+      const response = await apiClient.post("/seller/orders/confirm", { productId });
       return response.data;
     },
 

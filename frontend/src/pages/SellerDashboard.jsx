@@ -2,13 +2,14 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
 import Navbar from "../components/Navbar";
-import { 
-  Store, Plus, Trash2, Check, ToggleLeft, ToggleRight, DollarSign, 
-  Layers, CheckCircle, Eye, X, Upload, Sparkles, Loader
+import {
+  Store, Plus, Trash2, Check, DollarSign,
+  Layers, CheckCircle, Eye, X, Upload, Sparkles, Loader, Handshake,
+  Minus, ShoppingCart
 } from "lucide-react";
 
 export default function SellerDashboard() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [myProducts, setMyProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState("");
@@ -34,40 +35,37 @@ export default function SellerDashboard() {
   const loadSellerData = async () => {
     setLoading(true);
     try {
-      // Menggunakan endpoint khusus seller agar produk yang laku juga tertarik
       const productsData = await api.seller.getProducts();
-      
+
       if (Array.isArray(productsData)) {
-        // Parser Harga dari Neo4j Integer (MencegahNaN)
-        const parsedProducts = productsData.map(p => ({
-            ...p,
-            price: (p.price && p.price.low !== undefined) ? p.price.low : p.price
-        }));
-
-        setMyProducts(parsedProducts);
-
-        // Kalkulasi Metrik
         let earnings = 0;
         let active = 0;
-        let sold = 0;
-        
-        parsedProducts.forEach(p => {
-          const isAvail = p.status === "available" || p.status === "Tersedia";
-          if (isAvail) active += 1;
-          else {
-            sold += 1;
-            earnings += p.price;
-          }
+        let soldTotal = 0;
+        let viewsTotal = 0;
+
+        const parsedProducts = productsData.map(p => {
+          // Parse integer dari Neo4j agar aman digunakan
+          const price = p.price?.low ?? p.price ?? 0;
+          const stock = p.stock?.low ?? p.stock ?? 0;
+          const views = p.views?.low ?? p.views ?? 0; // Data dari backend query baru
+          const sold = p.sold?.low ?? p.sold ?? 0;    // Data dari backend query baru
+
+          // Akumulasi Metrik Dasbor Utama
+          if (stock > 0 || p.status === "available") active += 1;
+
+          soldTotal += sold;
+          earnings += (sold * price); // Pendapatan real dari barang yang benar-benar terjual
+          viewsTotal += views;
+
+          return { ...p, price, stock, views, sold };
         });
 
-        // Simulasi view (nanti bisa disambungkan dengan properti Neo4j view count)
-        const mockViews = parsedProducts.length * 12 + 5; 
-
+        setMyProducts(parsedProducts);
         setMetrics({
           totalEarnings: earnings,
           activeCount: active,
-          soldCount: sold,
-          totalViews: mockViews
+          soldCount: soldTotal,
+          totalViews: viewsTotal
         });
       }
     } catch (err) {
@@ -78,10 +76,11 @@ export default function SellerDashboard() {
   };
 
   useEffect(() => {
+    if (authLoading) return;
     if (user) {
       loadSellerData();
     }
-  }, [user]);
+  }, [user, authLoading]);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -91,26 +90,37 @@ export default function SellerDashboard() {
     }
   };
 
-  const handleToggleStatus = async (product) => {
-    const isAvail = product.status === "available" || product.status === "Tersedia";
-    // Jika sedang available, kita set stok jadi 0 (sold_out). Jika terjual, set stok 1 (available)
-    const targetStock = isAvail ? 0 : 1; 
-    
+  // --- KONTROL STOK BARU ---
+  const handleUpdateStock = async (productId, amount, operation) => {
     try {
-      await api.seller.updateStock(product.product_id, targetStock, 'set');
-      setToastMessage(`Status barang "${product.name}" berhasil diubah!`);
-      setTimeout(() => setToastMessage(""), 3500);
-      loadSellerData(); // Refresh data
+      // Panggil API untuk update (tambah/kurang/set)
+      await api.seller.updateStock(productId, amount, operation);
+
+      setToastMessage("Stok berhasil diperbarui!");
+      setTimeout(() => setToastMessage(""), 3000);
+      loadSellerData(); // Refresh data untuk melihat perubahan langsung
     } catch (err) {
       console.error(err);
-      alert("Gagal merubah status produk");
+      alert("Gagal memperbarui stok produk");
+    }
+  };
+
+  const handleConfirmSale = async (productId) => {
+    if (!window.confirm("Apakah pembeli sudah ketemuan, membayar, dan menerima barang ini (COD Selesai)?")) return;
+    try {
+      await api.seller.confirmSale(productId);
+      setToastMessage("Transaksi COD selesai! Pendapatan telah diperbarui.");
+      setTimeout(() => setToastMessage(""), 4000);
+      loadSellerData();
+    } catch (err) {
+      console.error(err);
+      alert("Gagal mengonfirmasi penjualan.");
     }
   };
 
   const handleDeleteProduct = async (id) => {
-    if (!window.confirm("Apakah Anda yakin ingin menghapus barang jualan ini dari Akademart?")) return;
+    if (!window.confirm("Hapus barang ini dari katalog Akademart secara permanen?")) return;
     try {
-      // Menggunakan API delete khusus seller
       await api.seller.deleteProduct(id);
       setToastMessage("Barang berhasil dihapus.");
       setTimeout(() => setToastMessage(""), 3500);
@@ -133,17 +143,16 @@ export default function SellerDashboard() {
       const fd = new FormData();
       fd.append("name", newProdName);
       fd.append("price", newProdPrice);
-      fd.append("stock", 1); // Default saat upload barang adalah 1
+      fd.append("stock", 1);
       fd.append("description", newProdDesc);
-      // Di backend, kategori ditangkap sebagai array: categoryNames
-      fd.append("categoryNames", JSON.stringify([newProdCategory])); 
+      fd.append("categoryNames", JSON.stringify([newProdCategory]));
       fd.append("image", selectedFile);
 
       await api.products.create(fd);
-      
+
       setToastMessage("Barang jualan berhasil dipasang!");
       setTimeout(() => setToastMessage(""), 3500);
-      
+
       setNewProdName("");
       setNewProdPrice("");
       setNewProdDesc("");
@@ -153,7 +162,7 @@ export default function SellerDashboard() {
 
       loadSellerData();
     } catch (err) {
-      alert("Gagal menambahkan barang. Pastikan ukuran file gambar tidak terlalu besar.");
+      alert("Gagal menambahkan barang.");
     } finally {
       setIsSubmitting(false);
     }
@@ -167,11 +176,13 @@ export default function SellerDashboard() {
     }).format(num);
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-100">
-        <Loader className="w-8 h-8 text-violet-500 animate-spin mb-4" />
-        <p className="text-xs text-slate-400">Memuat dasbor toko Anda...</p>
+        <Loader className="w-10 h-10 text-violet-500 animate-spin mb-4" />
+        <p className="text-xs text-slate-400">
+          {authLoading ? "Memverifikasi sesi toko..." : "Memuat dasbor toko dan analitik..."}
+        </p>
       </div>
     );
   }
@@ -180,7 +191,6 @@ export default function SellerDashboard() {
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
       <Navbar />
 
-      {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-5 right-5 z-50 p-4 rounded-xl bg-violet-600 border border-violet-400/30 text-white font-semibold text-xs shadow-2xl flex items-center space-x-2 animate-scaleIn">
           <Sparkles className="w-4 h-4 text-cyan-300 animate-spin" />
@@ -189,20 +199,18 @@ export default function SellerDashboard() {
       )}
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 space-y-10">
-        {/* Dashboard Title Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-white/5 pb-6">
           <div>
             <h1 className="text-3xl font-extrabold text-white tracking-tight leading-none mb-2">
               Toko <span className="text-violet-400">Saya</span>
             </h1>
             <p className="text-xs text-slate-500">
-              Kelola barang jualan Anda dan pantau performa transaksi COD di lingkungan kampus.
+              Kelola barang jualan Anda dan pantau performa interaksi (Views & Sales) secara langsung.
             </p>
           </div>
 
           <button
             onClick={() => setModalOpen(true)}
-            id="seller-add-product-btn"
             className="px-5 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-violet-500/25 transition-all flex items-center justify-center space-x-2 glow-button cursor-pointer"
           >
             <Plus className="w-4.5 h-4.5" />
@@ -210,7 +218,6 @@ export default function SellerDashboard() {
           </button>
         </div>
 
-        {/* Business Metrics Grid */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="glass-panel rounded-2xl p-5 border border-white/5 flex items-center space-x-4">
             <div className="w-10 h-10 rounded-xl bg-cyan-600/10 flex items-center justify-center text-cyan-400">
@@ -228,7 +235,7 @@ export default function SellerDashboard() {
             </div>
             <div>
               <div className="text-lg font-black text-white">{metrics.activeCount} Barang</div>
-              <div className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold">Listing Aktif</div>
+              <div className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold">Listing Tersedia</div>
             </div>
           </div>
 
@@ -237,8 +244,8 @@ export default function SellerDashboard() {
               <CheckCircle className="w-5.5 h-5.5" />
             </div>
             <div>
-              <div className="text-lg font-black text-white">{metrics.soldCount} Terjual</div>
-              <div className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold">Barang Terjual (COD)</div>
+              <div className="text-lg font-black text-white">{metrics.soldCount} Transaksi</div>
+              <div className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold">Berhasil COD</div>
             </div>
           </div>
 
@@ -248,12 +255,12 @@ export default function SellerDashboard() {
             </div>
             <div>
               <div className="text-lg font-black text-white">{metrics.totalViews} Kali</div>
-              <div className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold">Dilihat Mahasiswa</div>
+              <div className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold">Total Dilihat</div>
             </div>
           </div>
         </section>
 
-        {/* Listings Table Display */}
+        {/* Tabel Listings */}
         <section className="glass-panel rounded-3xl border border-white/10 overflow-hidden glow-border">
           <div className="px-6 py-4.5 border-b border-white/5 flex items-center justify-between bg-slate-900/40">
             <h3 className="font-bold text-base text-slate-100 flex items-center space-x-2">
@@ -268,7 +275,6 @@ export default function SellerDashboard() {
           {myProducts.length === 0 ? (
             <div className="p-20 text-center space-y-4">
               <p className="text-sm font-semibold text-slate-400">Belum ada barang jualan yang terdaftar.</p>
-              <p className="text-xs text-slate-500">Mulai jual buku referensi, modul praktikum, atau aksesoris kos Anda yang tidak terpakai!</p>
               <button
                 onClick={() => setModalOpen(true)}
                 className="px-4 py-2.5 bg-violet-600/10 text-violet-400 border border-violet-500/25 hover:bg-violet-600 hover:text-white rounded-xl transition-all text-xs font-semibold cursor-pointer"
@@ -281,60 +287,89 @@ export default function SellerDashboard() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-white/5 text-[10px] text-slate-500 uppercase tracking-widest font-bold bg-slate-950/40">
-                    <th className="px-6 py-4">Barang</th>
-                    <th className="px-6 py-4">Kategori</th>
-                    <th className="px-6 py-4">Harga</th>
-                    <th className="px-6 py-4 text-center">Status Jualan</th>
+                    <th className="px-6 py-4">Informasi Produk</th>
+                    <th className="px-6 py-4">Kinerja</th>
+                    <th className="px-6 py-4 text-center">Manajemen Stok</th>
+                    <th className="px-6 py-4 text-center">Status COD</th>
                     <th className="px-6 py-4 text-right">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 text-sm">
                   {myProducts.map((prod) => {
-                    const isAvail = prod.status === "available" || prod.status === "Tersedia";
+                    const statusNormal = prod.status ? prod.status.toString().toUpperCase() : "";
+
+                    const isAvail = statusNormal === "AVAILABLE";
+                    const isPending = statusNormal === "BOUGHT_PENDING";
+                    const isSold = statusNormal === "SOLD";
+
+                    console.log(`Debug Produk: ${prod.name} | Status DB: ${prod.status} | isPending: ${isPending}`);
                     return (
                       <tr key={prod.product_id} className="hover:bg-white/2 transition-colors">
                         <td className="px-6 py-4.5 flex items-center space-x-3.5">
                           <img
                             src={prod.image_url}
                             alt={prod.name}
-                            className="w-11 h-11 object-cover rounded-lg border border-white/5 bg-slate-900"
+                            className="w-12 h-12 object-cover rounded-lg border border-white/5 bg-slate-900"
                           />
                           <div>
                             <div className="font-bold text-slate-100">{prod.name}</div>
-                            <div className="text-[10px] text-slate-500 mt-0.5 line-clamp-1 max-w-[280px]">
-                              {prod.description}
+                            <div className="text-[10px] text-slate-500 mt-0.5 line-clamp-1 max-w-[200px]">
+                              {prod.category} • {formatRupiah(prod.price)}
                             </div>
                           </div>
                         </td>
+
                         <td className="px-6 py-4">
-                          <span className="text-xs font-semibold px-2 py-1 bg-white/5 border border-white/5 text-slate-400 rounded-lg">
-                            {prod.category}
-                          </span>
+                          <div className="flex flex-col space-y-1.5">
+                            <span className="flex items-center space-x-1.5 text-xs text-slate-400" title="Dilihat pengguna lain">
+                              <Eye className="w-3.5 h-3.5 text-cyan-400" /> <span>{prod.views} views</span>
+                            </span>
+                            <span className="flex items-center space-x-1.5 text-xs text-slate-400" title="Berhasil terjual (COD)">
+                              <ShoppingCart className="w-3.5 h-3.5 text-emerald-400" /> <span>{prod.sold} terjual</span>
+                            </span>
+                          </div>
                         </td>
-                        <td className="px-6 py-4 font-extrabold text-slate-200">
-                          {formatRupiah(prod.price)}
-                        </td>
+
                         <td className="px-6 py-4 text-center">
-                          <button
-                            onClick={() => handleToggleStatus(prod)}
-                            className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-                              isAvail
-                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                                : "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                            }`}
-                          >
-                            {isAvail ? <ToggleRight className="w-5 h-5 text-emerald-400" /> : <ToggleLeft className="w-5 h-5 text-rose-400" />}
-                            <span>{isAvail ? "Tersedia (COD)" : "Terjual"}</span>
-                          </button>
+                          <div className="flex items-center justify-center space-x-3 bg-slate-900/50 p-1.5 rounded-xl border border-white/5 w-max mx-auto">
+                            <button
+                              onClick={() => handleUpdateStock(prod.product_id, 1, 'subtract')}
+                              disabled={prod.stock <= 0}
+                              className="p-1.5 bg-white/5 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 rounded-lg disabled:opacity-30 transition-colors"
+                            >
+                              <Minus className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="text-xs font-bold w-6 text-center">{prod.stock}</span>
+                            <button
+                              onClick={() => handleUpdateStock(prod.product_id, 1, 'add')}
+                              className="p-1.5 bg-white/5 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-400 rounded-lg transition-colors"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
-                        <td className="px-6 py-4 text-right">
-                          <button
-                            onClick={() => handleDeleteProduct(prod.product_id)}
-                            className="p-2.5 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-600 hover:text-white transition-colors cursor-pointer"
-                            title="Hapus Listing"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+
+                        <td className="px-6 py-4 text-center">
+                          <div className="flex flex-col items-center space-y-2">
+                            {/* Indikator Status */}
+                            <span className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${isAvail ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
+                                isPending ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
+                                  "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                              }`}>
+                              {isAvail ? "Tersedia" : isPending ? "Menunggu COD" : "Terjual"}
+                            </span>
+
+                            {/* Tombol Konfirmasi COD - MUNCUL HANYA SAAT PENDING */}
+                            {isPending && (
+                              <button
+                                onClick={() => handleConfirmSale(prod.product_id)}
+                                className="w-full py-1.5 px-2 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 rounded-lg text-[10px] font-bold transition-colors flex items-center justify-center space-x-1 shadow-sm cursor-pointer"
+                              >
+                                <Handshake className="w-3.5 h-3.5" />
+                                <span>Konfirmasi COD</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -346,148 +381,62 @@ export default function SellerDashboard() {
         </section>
       </main>
 
-      {/* CREATE NEW LISTING OVERLAY MODAL */}
+      {/* MODAL TAMBAH PRODUK */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
           <div className="glass-panel w-full max-w-lg rounded-3xl p-6 border border-white/10 glow-border shadow-2xl relative space-y-5 animate-scaleIn max-h-[90vh] overflow-y-auto">
-            
-            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-white/5 pb-3">
               <h2 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
                 <Plus className="w-5 h-5 text-violet-400" />
                 <span>Pasang Barang Baru</span>
               </h2>
-              <button
-                onClick={() => {
-                  setModalOpen(false);
-                  setFilePreview("");
-                  setSelectedFile(null);
-                }}
-                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white"
-              >
+              <button onClick={() => setModalOpen(false)} className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Modal Form */}
             <form onSubmit={handleAddProductSubmit} className="space-y-4">
-              
               <div className="flex flex-col">
                 <label className="text-xs text-slate-400 mb-1 font-semibold">Nama Barang</label>
-                <input
-                  type="text"
-                  placeholder="Contoh: Buku Kalkulus Purcell Edisi 9"
-                  value={newProdName}
-                  onChange={(e) => setNewProdName(e.target.value)}
-                  className="px-4 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-violet-500"
-                  required
-                />
+                <input type="text" value={newProdName} onChange={(e) => setNewProdName(e.target.value)} className="px-4 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-slate-100 text-sm focus:outline-none focus:border-violet-500" required />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex flex-col">
                   <label className="text-xs text-slate-400 mb-1 font-semibold">Harga Jual (IDR)</label>
-                  <input
-                    type="number"
-                    placeholder="Contoh: 95000"
-                    value={newProdPrice}
-                    onChange={(e) => setNewProdPrice(e.target.value)}
-                    className="px-4 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-violet-500"
-                    required
-                  />
+                  <input type="number" value={newProdPrice} onChange={(e) => setNewProdPrice(e.target.value)} className="px-4 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-slate-100 text-sm focus:outline-none focus:border-violet-500" required />
                 </div>
-
                 <div className="flex flex-col">
                   <label className="text-xs text-slate-400 mb-1 font-semibold">Kategori</label>
-                  <select
-                    value={newProdCategory}
-                    onChange={(e) => setNewProdCategory(e.target.value)}
-                    className="px-4 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-slate-100 text-sm focus:outline-none focus:border-violet-500 cursor-pointer"
-                  >
-                    {categories.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
+                  <select value={newProdCategory} onChange={(e) => setNewProdCategory(e.target.value)} className="px-4 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-slate-100 text-sm focus:outline-none focus:border-violet-500">
+                    {categories.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               </div>
-
               <div className="flex flex-col">
-                <label className="text-xs text-slate-400 mb-1 font-semibold">Deskripsi & Kondisi Barang</label>
-                <textarea
-                  placeholder="Jelaskan kondisi barang, kelengkapan, dan tempat ketemuan COD..."
-                  rows="3"
-                  value={newProdDesc}
-                  onChange={(e) => setNewProdDesc(e.target.value)}
-                  className="px-4 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-violet-500 resize-none"
-                  required
-                ></textarea>
+                <label className="text-xs text-slate-400 mb-1 font-semibold">Deskripsi</label>
+                <textarea rows="3" value={newProdDesc} onChange={(e) => setNewProdDesc(e.target.value)} className="px-4 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-slate-100 text-sm focus:outline-none focus:border-violet-500 resize-none" required></textarea>
               </div>
-
-              {/* File Image Upload Drag & Drop Area */}
               <div className="flex flex-col">
-                <label className="text-xs text-slate-400 mb-1.5 font-semibold">Unggah Foto Barang</label>
-                
+                <label className="text-xs text-slate-400 mb-1.5 font-semibold">Unggah Foto</label>
                 {filePreview ? (
                   <div className="relative aspect-video rounded-xl overflow-hidden bg-slate-900 border border-white/10">
                     <img src={filePreview} alt="Preview" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedFile(null);
-                        setFilePreview("");
-                      }}
-                      className="absolute top-2 right-2 p-1.5 rounded-lg bg-slate-950/80 text-rose-400 hover:text-white"
-                      title="Ganti gambar"
-                    >
+                    <button type="button" onClick={() => { setSelectedFile(null); setFilePreview(""); }} className="absolute top-2 right-2 p-1.5 rounded-lg bg-slate-950/80 text-rose-400">
                       <X className="w-4 h-4" />
                     </button>
                   </div>
                 ) : (
-                  <label className="border-2 border-dashed border-white/15 hover:border-violet-500/50 rounded-xl aspect-video flex flex-col items-center justify-center p-4 cursor-pointer hover:bg-white/2 transition-all">
+                  <label className="border-2 border-dashed border-white/15 hover:border-violet-500/50 rounded-xl aspect-video flex flex-col items-center justify-center p-4 cursor-pointer">
                     <Upload className="w-8 h-8 text-slate-500 mb-2" />
-                    <span className="text-xs text-slate-300 font-semibold">Klik atau seret foto ke area ini</span>
-                    <span className="text-[10px] text-slate-500 mt-1">Mendukung JPEG, PNG, WEBP (maks. 5MB)</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileChange}
-                      className="hidden"
-                      required
-                    />
+                    <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" required />
                   </label>
                 )}
               </div>
-
-              {/* Submit Buttons */}
-              <div className="flex items-center justify-end space-x-3 pt-3 border-t border-white/5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setModalOpen(false);
-                    setFilePreview("");
-                    setSelectedFile(null);
-                  }}
-                  className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-semibold text-slate-300 transition-colors"
-                >
-                  Batal
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center space-x-1.5 cursor-pointer"
-                >
-                  {isSubmitting ? (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  ) : (
-                    <>
-                      <span>Pasang Sekarang</span>
-                      <Check className="w-4 h-4" />
-                    </>
-                  )}
+              <div className="flex justify-end pt-3">
+                <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer flex items-center space-x-1.5">
+                  {isSubmitting ? <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin"></div> : <><span>Pasang Sekarang</span><Check className="w-4 h-4" /></>}
                 </button>
               </div>
-
             </form>
           </div>
         </div>

@@ -86,7 +86,9 @@ export default function ProductDetail() {
   };
 
   const handleAddToCart = () => {
-    if (!product) return;
+    // Pastikan state product sudah terisi sebelum lanjut
+    if (!product) return; 
+
     try {
       const cartKey = `akademart_cart_${user?.user_id}`;
       const stored = localStorage.getItem(cartKey);
@@ -101,10 +103,7 @@ export default function ProductDetail() {
 
       localStorage.setItem(cartKey, JSON.stringify(cartItems));
 
-      // Trigger implicit interaction edge
-      api.graph.trackInteraction(product.product_id, "cart");
-
-      // Notify navbar
+      // HANYA simpan ke localStorage, jangan tembak API buy() di sini
       window.dispatchEvent(new Event("cartUpdated"));
 
       setToastMessage(`Berhasil menambahkan "${product.name}" ke keranjang!`);
@@ -115,8 +114,8 @@ export default function ProductDetail() {
   };
 
   const handleBuyNow = () => {
-    // Add to cart and immediately jump to checkout
-    handleAddToCart();
+    // Masukkan ke keranjang, lalu pindah halaman
+    handleAddToCart(); 
     navigate("/cart");
   };
 

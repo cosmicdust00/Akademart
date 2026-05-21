@@ -43,51 +43,47 @@ const register = async (req, res) => {
 // /api/auth/login
 const login = async (req, res) => {
     const { email, password } = req.body;
-
+    const session = driver.session();
     try {
-        const session = driver.session();
+        // Query untuk mengambil user DAN relasinya sekaligus saat login
+        const query = `
+            MATCH (u:User {email: $email})
+            OPTIONAL MATCH (u)-[:STUDIES_IN_FAKULTAS]->(f:Fakultas)
+            OPTIONAL MATCH (u)-[:STUDIES_IN_PRODI]->(p:Prodi)
+            RETURN u {.*, fakultas: f.name, prodi: p.name} AS userData
+        `;
+        
+        const result = await session.executeRead(tx => tx.run(query, { email }));
+        if (result.records.length === 0) return res.status(401).json({ error: "User not found." });
 
-        // Cari user di Neo4j berdasarkan email
-        const result = await session.executeRead(tx =>
-            tx.run('MATCH (u:User {email: $email}) RETURN u', { email })
-        );
-
-        if (result.records.length === 0) {
-            return res.status(401).json({ error: "User not found." });
-        }
-
-        const user = result.records[0].get('u').properties;
-        await session.close();
-
-        // Bandingkan password yang dikirim dengan hash di database
+        const user = result.records[0].get('userData');
         const isMatch = await bcrypt.compare(password, user.password_hash);
-        if (!isMatch) {
-            return res.status(401).json({ error: "Invalid password." });
-        }
+        if (!isMatch) return res.status(401).json({ error: "Invalid password." });
 
-        // Generate JWT
-        const token = jwt.sign(
-            { user_id: user.user_id, email: user.email },
-            JWT_SECRET,
-            { expiresIn: '24h' }
-        );
+        const token = jwt.sign({ user_id: user.user_id, email: user.email }, JWT_SECRET, { expiresIn: '24h' });
 
         res.status(200).json({ 
             message: "Login successful!", 
             token, 
-            user: { username: user.username, email: user.email } 
+            user: {
+                user_id: user.user_id,
+                full_name: user.full_name,
+                email: user.email,
+                username: user.username,
+                fakultas: user.fakultas,
+                prodi: user.prodi
+            }
         });
-
     } catch (error) {
-        console.error("Error logging in:", error);
         res.status(500).json({ error: "Login failed." });
+    } finally {
+        await session.close();
     }
 };
 
 const getProfile = async (req, res) => {
     const session = driver.session();
     try {
-        // Query untuk menarik User beserta Fakultas, Prodi, dan Matkul-nya
         const query = `
             MATCH (u:User {user_id: $userId})
             OPTIONAL MATCH (u)-[:STUDIES_IN_FAKULTAS]->(f:Fakultas)

@@ -26,10 +26,10 @@ export const AuthProvider = ({ children }) => {
           localStorage.removeItem("akademart_token");
         }
       } catch (err) {
-        console.error("Gagal memuat profil pengguna otomatis:", err.message);
-        // Hapus token jika error 401 (Unauthorized/Token kadaluarsa)
-        if (err.response && err.response.status === 401) {
-             localStorage.removeItem("akademart_token");
+        console.warn("Auth check failed:", err.response?.status);
+        
+        if (err.response?.status === 401 || err.response?.status === 403) {
+            localStorage.removeItem("akademart_token");
         }
       } finally {
         setLoading(false);
@@ -39,11 +39,9 @@ export const AuthProvider = ({ children }) => {
     fetchUser();
   }, []);
 
-  // 2. Fungsi Login
   const login = async (email, password) => {
     setError(null);
     try {
-      // Panggil endpoint /api/auth/login
       const res = await api.post('/auth/login', { email, password });
       
       // Ambil token dan user dari respon backend
@@ -67,7 +65,6 @@ export const AuthProvider = ({ children }) => {
   const register = async (userData) => {
     setError(null);
     try {
-      // Backend kita mengembalikan { message: "User registered..." }
       const res = await api.post('/auth/register', userData);
       
       // Backend kita saat register TIDAK mengirimkan token/user data otomatis login

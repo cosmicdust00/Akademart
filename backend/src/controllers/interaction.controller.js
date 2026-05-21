@@ -40,15 +40,17 @@ const buyProduct = async (req, res) => {
         const query = `
             MATCH (u:User {user_id: $userId})
             MATCH (p:Product {product_id: $productId})
-            WHERE p.stock > 0
+            // Pastikan stok masih ada agar tidak ada double-booking
+            WHERE p.stock > 0 
             
             CREATE (u)-[r:BOUGHT_PENDING {
                 date: datetime(),
                 transaction_id: $transactionId
             }]->(p)
             
+            // Kurangi stok dan sesuaikan status dengan frontend ('sold_out')
             SET p.stock = p.stock - 1,
-                p.status = CASE WHEN p.stock = 0 THEN 'out_of_stock' ELSE p.status END
+                p.status = CASE WHEN p.stock = 0 THEN 'sold_out' ELSE p.status END
             
             RETURN p
         `;
@@ -60,10 +62,10 @@ const buyProduct = async (req, res) => {
         }));
 
         if (result.records.length === 0) {
-            return res.status(400).json({ error: "Barang sudah habis atau tidak ditemukan." });
+            return res.status(400).json({ error: "Barang sudah habis terjual atau tidak ditemukan." });
         }
 
-        res.status(200).json({ message: "Pesanan dibuat, menunggu konfirmasi penjual." });
+        res.status(200).json({ message: "Pesanan dibuat, menunggu konfirmasi penjual saat COD." });
     } catch (error) {
         console.error("Error buying product:", error);
         res.status(500).json({ error: "Gagal memproses pesanan." });

@@ -12,11 +12,10 @@ import {
   ShieldCheck, 
   Sparkles,
   ArrowRight,
-  Plus,
-  Minus,
   AlertTriangle,
   X,
-  FileText
+  FileText,
+  Loader
 } from "lucide-react";
 
 export default function Cart() {
@@ -44,43 +43,53 @@ export default function Cart() {
   ];
 
   const loadCart = () => {
-    setLoading(true);
     try {
       const cartKey = `akademart_cart_${user?.user_id}`;
       const stored = localStorage.getItem(cartKey);
+      
       if (stored) {
-        setCartItems(JSON.parse(stored));
+        let parsed = JSON.parse(stored);
+        
+        // Pastikan formatnya selalu array (mencegah error jika data korup)
+        if (!Array.isArray(parsed)) parsed = [];
+        
+        // Filter super ketat: Hanya masukkan barang yang datanya lengkap
+        const validItems = parsed.filter(item => 
+          item && 
+          item.product_id && 
+          item.name && 
+          item.price !== undefined
+        );
+        
+        setCartItems(validItems);
+        
+        // Perbarui localStorage jika ada barang rusak yang dibuang
+        if (validItems.length !== parsed.length) {
+          localStorage.setItem(cartKey, JSON.stringify(validItems));
+        }
       } else {
         setCartItems([]);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Data keranjang rusak, melakukan reset...", err);
+      // Jika JSON parse gagal total, reset keranjang
+      setCartItems([]);
+      localStorage.removeItem(`akademart_cart_${user?.user_id}`);
     } finally {
+      // APAPUN YANG TERJADI, PASTIKAN LOADING BERHENTI
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (user) {
+    if (user && user.user_id) {
       loadCart();
+    } else {
+      // Jika user gagal dimuat (atau delay), paksa loading berhenti
+      const timer = setTimeout(() => setLoading(false), 1000);
+      return () => clearTimeout(timer);
     }
   }, [user]);
-
-  // Adjust product quantities
-  const updateQuantity = (productId, delta) => {
-    const cartKey = `akademart_cart_${user?.user_id}`;
-    const updated = cartItems.map((item) => {
-      if (item.product_id === productId) {
-        const nextQty = Math.max(1, item.quantity + delta);
-        return { ...item, quantity: nextQty };
-      }
-      return item;
-    });
-
-    setCartItems(updated);
-    localStorage.setItem(cartKey, JSON.stringify(updated));
-    window.dispatchEvent(new Event("cartUpdated"));
-  };
 
   // Remove from cart
   const handleRemove = (productId) => {
@@ -109,40 +118,48 @@ export default function Cart() {
     }
 
     try {
-      // 1. Log Graph Purchase Edges implicitly for each item
+      // Buat array untuk menampung barang yang sukses dan gagal
+      let successItems = [];
+      let failedItems = [];
+
       for (const item of cartItems) {
-        await api.graph.trackInteraction(item.product_id, "buy");
-        // Update product availability mock flag inside LocalStorage to 'sold_out'
-        const storedProducts = localStorage.getItem("akademart_mock_products");
-        if (storedProducts) {
-          const prods = JSON.parse(storedProducts);
-          const index = prods.findIndex(p => p.product_id === item.product_id);
-          if (index !== -1) {
-            prods[index].status = "sold_out";
-            localStorage.setItem("akademart_mock_products", JSON.stringify(prods));
-          }
+        try {
+          // Tembak endpoint interaksi BOUGHT ke backend Neo4j
+          await api.interactions.buy(item.product_id);
+          successItems.push(item);
+        } catch (err) {
+          // Jika Neo4j melempar 400 (Barang habis/tidak ada)
+          failedItems.push(item.name);
         }
       }
 
+      // Jika ada barang yang gagal dibeli (sudah keduluan orang lain)
+      if (failedItems.length > 0) {
+        alert(`Mohon maaf, barang berikut sudah habis terjual atau tidak tersedia:\n- ${failedItems.join('\n- ')}\n\nSilakan hapus dari keranjang Anda.`);
+        return; // Hentikan proses checkout
+      }
+
+      // Jika semua sukses, Buat Tiket/Resi Pembelian
       const orderRef = `COD-${Date.now().toString().slice(-6)}`;
       setLastOrderDetails({
         orderId: orderRef,
-        items: [...cartItems],
+        items: [...cartItems], // Semua pasti stok 1
         total,
         spot: finalSpot,
         time: meetingTime
       });
 
-      // 2. Clear user's cart
+      // Bersihkan keranjang belanja di LocalStorage
       const cartKey = `akademart_cart_${user?.user_id}`;
       localStorage.removeItem(cartKey);
       setCartItems([]);
       window.dispatchEvent(new Event("cartUpdated"));
 
+      // Buka pop-up sukses
       setCheckoutOpen(false);
       setSuccessOpen(true);
     } catch (err) {
-      alert("Gagal menyelesaikan checkout COD: " + err.message);
+      alert("Terjadi kesalahan sistem saat checkout COD.");
     }
   };
 
@@ -228,30 +245,20 @@ export default function Cart() {
                   </div>
 
                   {/* Quantity Adjusters */}
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-4">
+                    <span className="text-xs font-bold text-slate-400 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
+                      Kuantitas: 1
+                    </span>
+
+                    {/* Remove Button */}
                     <button
-                      onClick={() => updateQuantity(item.product_id, -1)}
-                      className="p-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                      onClick={() => handleRemove(item.product_id)}
+                      className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl transition-colors cursor-pointer"
+                      title="Hapus dari keranjang"
                     >
-                      <Minus className="w-4.5 h-4.5" />
-                    </button>
-                    <span className="w-8 text-center text-xs font-bold">{item.quantity}</span>
-                    <button
-                      onClick={() => updateQuantity(item.product_id, 1)}
-                      className="p-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
-                    >
-                      <Plus className="w-4.5 h-4.5" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
-
-                  {/* Remove Button */}
-                  <button
-                    onClick={() => handleRemove(item.product_id)}
-                    className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl transition-colors cursor-pointer"
-                    title="Hapus dari keranjang"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
                 </div>
               ))}
             </div>

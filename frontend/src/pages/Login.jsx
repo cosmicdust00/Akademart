@@ -56,9 +56,9 @@ export default function Login() {
   const [selectedHobbies, setSelectedHobbies] = useState([]);
 
   const fakultasData = {
-    "Fakultas Ilmu Komputer": ["Teknik Informatika", "Sistem Informasi", "Teknologi Informasi"],
-    "Fakultas Teknik": ["Teknik Elektro", "Teknik Mesin", "Teknik Sipil", "Teknik Kimia"],
-    "Fakultas Ekonomi & Bisnis": ["Manajemen", "Akuntansi", "Ekonomi Pembangunan"],
+    "Fakultas Ilmu Komputer": ["Ilmu Komputer", "Sistem Informasi", "Kecerdasan Buatan"],
+    "Fakultas Teknik": ["Teknik Elektro", "Teknik Komputer", "Teknik Mesin", "Teknik Sipil", "Teknik Kimia"],
+    "Fakultas Ekonomi & Bisnis": ["Manajemen", "Akuntansi", "Ekonomi"],
     "Fakultas Ilmu Sosial & Ilmu Politik": ["Ilmu Komunikasi", "Hubungan Internasional", "Administrasi Publik"],
   };
 
@@ -110,14 +110,13 @@ export default function Login() {
     }
   };
 
-  // INTEGRASI BACKEND: Sequential API Calls
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     setUiError("");
     setIsLoading(true);
 
     try {
-      // Daftarkan identitas dasar
+      // Daftarkan identitas
       await register({
         username: regAccount.username,
         full_name: regAccount.full_name,
@@ -127,26 +126,25 @@ export default function Login() {
       });
 
       // Login otomatis
-      await login(regAccount.email, regAccount.password);
+      const userData = await login(regAccount.email, regAccount.password);
 
-      // Update Profil Akademik (Fakultas, Prodi, DAN Mata Kuliah)
+      // Update Profil Akademik (Gunakan api.auth.updateProfile dari AuthContext)
       await updateProfile({
         fakultas: regFakultas,
         prodi: regJurusan,
-        matakuliah: regCourses // Tambahkan ini di sini
+        matakuliah: regCourses
       });
 
-      // Update Minat & Hobi Eksplisit (Hanya interest dan hobby)
+      // Update Minat & Hobi (PENTING: Gunakan 'api' bukan 'apiClient')
       const combinedInterests = [...selectedInterests, ...selectedHobbies];
       if (combinedInterests.length > 0) {
-        await apiClient.post("/users/profile/interests/explicit", {
-          interests: combinedInterests
-        });
+        // Asumsi Anda punya endpoint ini di api.js
+        await api.users.setExplicitInterests({ interests: combinedInterests });
       }
 
-      // Sukses! Arahkan ke Beranda
       navigate("/home");
     } catch (err) {
+      console.error(err);
       setUiError(err.message || "Gagal menyelesaikan pendaftaran.");
       setRegStep(1);
     } finally {
