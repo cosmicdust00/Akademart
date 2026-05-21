@@ -19,7 +19,6 @@ const getRecommendations = async (req, res) => {
             MATCH (seller:User)-[:SELLING]->(recom)
             OPTIONAL MATCH (seller)-[:STUDIES_IN_PRODI]->(pr:Prodi)
             
-            // PERBAIKAN RETURN DI SINI
             RETURN recom {
                 .*,  // <-- Mengambil semua properti bawaan product termasuk description
                 seller_id: seller.user_id,
@@ -41,7 +40,6 @@ const getRecommendations = async (req, res) => {
                 OPTIONAL MATCH (p)<-[r:VIEWED|LIKED|BOUGHT]-()
                 WHERE NOT (:User {user_id: $userId})-[:DISLIKED]->(p)
                 
-                // PERBAIKAN RETURN DI SINI JUGA
                 RETURN p {
                     .*,  // <-- Mengambil semua properti bawaan product termasuk description
                     seller_id: seller.user_id,

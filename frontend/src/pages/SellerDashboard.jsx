@@ -296,11 +296,11 @@ export default function SellerDashboard() {
                 </thead>
                 <tbody className="divide-y divide-white/5 text-sm">
                   {myProducts.map((prod) => {
-                    const statusNormal = prod.status ? prod.status.toString().toUpperCase() : "";
+                    const statusNormal = prod.status ? prod.status.toString().toLowerCase() : "";
 
-                    const isAvail = statusNormal === "AVAILABLE";
-                    const isPending = statusNormal === "BOUGHT_PENDING";
-                    const isSold = statusNormal === "SOLD";
+                    const isAvail = statusNormal === "available";
+                    const isPending = statusNormal === "bought_pending";
+                    const isSold = statusNormal === "sold" || statusNormal === "sold_out";
 
                     console.log(`Debug Produk: ${prod.name} | Status DB: ${prod.status} | isPending: ${isPending}`);
                     return (
@@ -353,10 +353,10 @@ export default function SellerDashboard() {
                           <div className="flex flex-col items-center space-y-2">
                             {/* Indikator Status */}
                             <span className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${isAvail ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
-                                isPending ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
-                                  "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                              isPending ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
+                                "bg-rose-500/10 text-rose-400 border border-rose-500/20"
                               }`}>
-                              {isAvail ? "Tersedia" : isPending ? "Menunggu COD" : "Terjual"}
+                              {isAvail ? "Tersedia" : isPending ? "Menunggu COD" : (statusNormal === 'out_of_stock' ? "Stok Habis" : "Terjual")}
                             </span>
 
                             {/* Tombol Konfirmasi COD - MUNCUL HANYA SAAT PENDING */}

@@ -126,21 +126,18 @@ export default function Login() {
       });
 
       // Login otomatis
-      const userData = await login(regAccount.email, regAccount.password);
+      await login(regAccount.email, regAccount.password);
 
-      // Update Profil Akademik (Gunakan api.auth.updateProfile dari AuthContext)
+      // Gabungkan minat dan hobi
+      const combinedInterests = [...selectedInterests, ...selectedHobbies];
+
+      // Update Profil Akademik & Minat
       await updateProfile({
         fakultas: regFakultas,
         prodi: regJurusan,
-        matakuliah: regCourses
+        matakuliah: regCourses,
+        interests: combinedInterests
       });
-
-      // Update Minat & Hobi (PENTING: Gunakan 'api' bukan 'apiClient')
-      const combinedInterests = [...selectedInterests, ...selectedHobbies];
-      if (combinedInterests.length > 0) {
-        // Asumsi Anda punya endpoint ini di api.js
-        await api.users.setExplicitInterests({ interests: combinedInterests });
-      }
 
       navigate("/home");
     } catch (err) {
@@ -225,7 +222,7 @@ export default function Login() {
                   <Mail className="absolute left-3.5 top-3.5 w-5 h-5 text-slate-500" />
                   <input
                     type="text"
-                    placeholder="Username atau Email Kampus"
+                    placeholder="Email Kampus"
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
                     className="w-full pl-11 pr-4 py-3 bg-slate-950/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all text-sm"
@@ -356,7 +353,7 @@ export default function Login() {
                         onChange={(e) => setRegAccount({ ...regAccount, angkatan: e.target.value })}
                         className="w-full pl-11 pr-4 py-3 bg-slate-950/50 border border-white/10 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm appearance-none cursor-pointer"
                       >
-                        <option value="2024">Angkatan 2025</option>
+                        <option value="2025">Angkatan 2025</option>
                         <option value="2024">Angkatan 2024</option>
                         <option value="2023">Angkatan 2023</option>
                         <option value="2022">Angkatan 2022</option>

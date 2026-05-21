@@ -38,7 +38,7 @@ const updateUserPersona = async (req, res) => {
 
 const setExplicitInterests = async (req, res) => {
     const userId = req.user.user_id;
-    const { interests } = req.body;  
+    const { interests } = req.body;
     // { "interests": ["Web Development", "Sistem Tertanam", "Networking"] }
 
     if (!interests || !Array.isArray(interests) || interests.length === 0) {
@@ -46,10 +46,10 @@ const setExplicitInterests = async (req, res) => {
     }
 
     const session = driver.session();
-    
+
     // Sistem menentukan bobot awal untuk pilihan eksplisit
     // Nilai 10 cukup besar untuk menandakan ini adalah "Minat Utama" user saat mendaftar
-    const INITIAL_WEIGHT = 10; 
+    const INITIAL_WEIGHT = 10;
 
     try {
         const query = `
@@ -80,10 +80,10 @@ const setExplicitInterests = async (req, res) => {
             ORDER BY weight DESC
         `;
 
-        const result = await session.executeWrite(tx => tx.run(query, { 
-            userId, 
-            interests, 
-            initialWeight: INITIAL_WEIGHT 
+        const result = await session.executeWrite(tx => tx.run(query, {
+            userId,
+            interests,
+            initialWeight: INITIAL_WEIGHT
         }));
 
         const savedInterests = result.records.map(record => ({
@@ -161,12 +161,12 @@ const syncImplicitInterests = async (req, res) => {
 const updateProfile = async (req, res) => {
     const userId = req.user.user_id;
     // Semua data ini bersifat opsional, user boleh mengirim hanya satu atau semuanya
-    const { full_name, fakultas, prodi, organisasi, matakuliah } = req.body;
+    const { full_name, fakultas, prodi, organisasi, matakuliah, interests } = req.body;
 
     const session = driver.session();
-    
+
     // Kita gunakan Transaction manual (beginTransaction) agar bisa menjalankan beberapa query Cypher secara terpisah namun dalam satu kesatuan proses.
-    const tx = session.beginTransaction(); 
+    const tx = session.beginTransaction();
 
     try {
         // Update Properti Teks Biasa (Contoh: full_name)
@@ -221,6 +221,17 @@ const updateProfile = async (req, res) => {
             `, { userId, matakuliah });
         }
 
+        if (interests && Array.isArray(interests)) {
+            await tx.run(`
+                MATCH (u:User {user_id: $userId})
+                UNWIND $interests AS intName
+                MERGE (i:Interest {name: intName})
+                MERGE (u)-[r:INTERESTED_IN]->(i)
+                ON CREATE SET r.weight = 10, r.source = 'explicit'
+                ON MATCH SET r.source = 'explicit'
+            `, { userId, interests });
+        }
+
         // Update Organisasi
         // { "organisasi": ["BEM", "HIMA", "UKM Musik"] }
         if (organisasi && Array.isArray(organisasi)) {
@@ -240,7 +251,7 @@ const updateProfile = async (req, res) => {
 
         // Jika semua query di atas berhasil tanpa error, simpan permanen ke database
         await tx.commit();
-        
+
         res.status(200).json({ message: "Profil berhasil diperbarui!" });
     } catch (error) {
         // Jika ada error di tengah jalan, batalkan SEMUA perubahan (rollback)
@@ -252,7 +263,7 @@ const updateProfile = async (req, res) => {
     }
 };
 
-module.exports = { 
+module.exports = {
     updateUserPersona,
     setExplicitInterests,
     syncImplicitInterests,
