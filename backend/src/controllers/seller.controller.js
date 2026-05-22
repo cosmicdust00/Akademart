@@ -22,7 +22,7 @@ const confirmSale = async (req, res) => {
             // Hapus relasi pending setelah dikonfirmasi
             DELETE pendingRel
             
-            // Update status produk berdasarkan sisa stok (HURUF KECIL)
+            // Update status produk berdasarkan sisa stok
             SET p.status = CASE 
                 WHEN p.stock > 0 THEN 'available' 
                 ELSE 'sold' 
@@ -85,7 +85,7 @@ const updateStock = async (req, res) => {
         res.status(200).json({ message: "Stok berhasil diperbarui.", currentStock: updatedStock });
         
     } catch (error) {
-        console.error("🔥 BENCANA DI UPDATE STOCK:", error);
+        console.error("Error updating sale:", error);
         res.status(500).json({ error: "Gagal memperbarui stok." });
     } finally {
         await session.close();
