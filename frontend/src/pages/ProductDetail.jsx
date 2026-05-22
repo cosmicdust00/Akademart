@@ -15,7 +15,9 @@ import {
   ShieldCheck,
   Loader,
   AlertTriangle,
-  Compass
+  Compass,
+  ThumbsUp,
+  ThumbsDown
 } from "lucide-react";
 
 export default function ProductDetail() {
@@ -28,6 +30,7 @@ export default function ProductDetail() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [toastMessage, setToastMessage] = useState("");
+  const [interactionState, setInteractionState] = useState(null); // 'liked', 'disliked', or null
 
   useEffect(() => {
     const loadProductData = async () => {
@@ -105,6 +108,42 @@ export default function ProductDetail() {
     // Add to cart and immediately jump to checkout
     handleAddToCart();
     navigate("/cart");
+  };
+
+  const handleLike = async () => {
+    if (!product) return;
+    try {
+      if (interactionState === 'liked') {
+        await api.interactions.remove(product.product_id);
+        setInteractionState(null);
+        setToastMessage("Batal menyukai produk.");
+      } else {
+        await api.interactions.like(product.product_id);
+        setInteractionState('liked');
+        setToastMessage("Produk disukai! Rekomendasi akan disesuaikan.");
+      }
+      setTimeout(() => setToastMessage(""), 3500);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDislike = async () => {
+    if (!product) return;
+    try {
+      if (interactionState === 'disliked') {
+        await api.interactions.remove(product.product_id);
+        setInteractionState(null);
+        setToastMessage("Batal dislike produk.");
+      } else {
+        await api.interactions.dislike(product.product_id);
+        setInteractionState('disliked');
+        setToastMessage("Produk tidak disukai. Kami akan menyesuaikan rekomendasi.");
+      }
+      setTimeout(() => setToastMessage(""), 3500);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   if (loading) {
@@ -247,6 +286,33 @@ export default function ProductDetail() {
               <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-line">
                 {product.description}
               </p>
+            </div>
+
+            {/* Interaction / Recommendation Feedback */}
+            <div className="flex items-center space-x-3 pt-2">
+              <span className="text-xs text-slate-400 font-medium mr-2">Bantu sesuaikan rekomendasi:</span>
+              <button
+                onClick={handleLike}
+                className={`p-2 rounded-lg border transition-all duration-300 flex items-center space-x-2 ${
+                  interactionState === 'liked'
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
+                    : 'bg-slate-800/50 text-slate-400 border-white/5 hover:bg-slate-800 hover:text-emerald-400'
+                }`}
+                title="Suka produk ini"
+              >
+                <ThumbsUp className={`w-4 h-4 ${interactionState === 'liked' ? 'fill-emerald-400/20' : ''}`} />
+              </button>
+              <button
+                onClick={handleDislike}
+                className={`p-2 rounded-lg border transition-all duration-300 flex items-center space-x-2 ${
+                  interactionState === 'disliked'
+                    ? 'bg-rose-500/20 text-rose-400 border-rose-500/50'
+                    : 'bg-slate-800/50 text-slate-400 border-white/5 hover:bg-slate-800 hover:text-rose-400'
+                }`}
+                title="Kurang suka produk ini"
+              >
+                <ThumbsDown className={`w-4 h-4 ${interactionState === 'disliked' ? 'fill-rose-400/20' : ''}`} />
+              </button>
             </div>
 
             {/* Transactions Actions Bar */}
